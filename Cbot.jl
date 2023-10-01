@@ -2,15 +2,51 @@ using HorizonSideRobots
 
 const (North, South, East) = (Nord, Sud, Ost) # West is identical in English and German
 const (w, a, s, d) = (North, West, South, East) # Debugging purposes
+@enum Diagonal NorthWest=0 NorthEast=1 SouthEast=2 SouthWest=3
+const (NW, NE, SE, SW) = (NorthWest, NorthEast, SouthEast, SouthWest) # West is identical in English and German
+
+function Diagonal(args...)
+    if length(tuple(args...)) != 2
+        throw("Diagonal requires 2 sides")
+    elseif args[1] == North && args[2] == West
+        return NorthWest
+    elseif args[1] == North && args[2] == East
+        return NorthEast
+    elseif args[1] == South && args[2] == East
+        return SouthEast
+    elseif args[1] == South && args[2] == West
+        return SouthWest
+    else
+        throw("the diagonal requires two adjacent sides")
+    end
+end
+
+Diagonal(Nord, East)
+
+function Diagonal(diagonal::Diagonal, convert=true)
+    if !convert return diagonal end
+    if diagonal == NorthWest
+        return (North, West)
+    elseif diagonal == NorthEast
+        return (North, East)
+    elseif diagonal == SouthEast
+        return (South, East)
+    elseif diagonal == SouthWest
+        return SW = (South, West)
+    else
+        throw("Unexpected Error")
+    end
+end
 
 @kwdef mutable struct MoveLog
     # TODO extend format
-    direction::Union{Nothing, HorizonSideRobots.HorizonSide}
+    direction::Union{Nothing, HorizonSideRobots.HorizonSide, Diagonal}
     steps::Union{Nothing, Integer}
 end
 
 """the following function changes the direction by 180 degrees"""
 inverse(side::HorizonSide) = HorizonSide(mod(Int(side)+2,4))
+inverse(side::Diagonal) = Diagonal(mod(Int(side)+2,4))
 inverse(moveLog::MoveLog) = MoveLog(inverse(moveLog.direction), moveLog.steps)
 
 function sumMoveLogs(moveLog1::MoveLog, moveLog2::MoveLog)
@@ -58,6 +94,79 @@ function move!(bot::Cbot, side::HorizonSide, times=1 ; moveFunction=HorizonSideR
     bot.traceMove && push!(bot.movesBuffer, MoveLog(side, times))
 end
 
+function move!(bot::Cbot, diagonal::Diagonal; moveFunction=HorizonSideRobots.move!)
+    if diagonal == NorthWest
+        if !isborder(bot, North)
+            move!(bot, North,moveFunction=moveFunction)
+            if !isborder(bot, West)
+                move!(bot, West, moveFunction=moveFunction)
+            else
+                move!(bot, South, moveFunction=moveFunction)
+            end
+        elseif !isborder(bot, West)
+            move!(bot, West, moveFunction=moveFunction)
+            if !isborder(bot, North)
+                move!Function(bot, North, moveFunction=moveFunction)
+            else
+                move!(bot, East, moveFunction=moveFunction)
+            end
+        else throw("Impossible")
+        end
+    elseif diagonal == NorthEast
+        if !isborder(bot, North)
+            move!(bot, North, moveFunction=moveFunction)
+            if !isborder(bot, East)
+                move!(bot, East, moveFunction=moveFunction)
+            else
+                move!(bot, South, moveFunction=moveFunction)
+            end
+        elseif !isborder(bot, East)
+            move!(bot, East, moveFunction=moveFunction)
+            if !isborder(bot, North)
+                move!(bot, North, moveFunction=moveFunction)
+            else
+                move!(bot, West, moveFunction=moveFunction)
+            end
+        else throw("Impossible")
+        end
+    elseif diagonal == SouthEast
+        if !isborder(bot, South)
+            move!(bot, South, moveFunction=moveFunction)
+            if !isborder(bot, East)
+                move!(bot, East, moveFunction=moveFunction)
+            else
+                move!(bot, North, moveFunction=moveFunction)
+            end
+        elseif !isborder(bot, East)
+            move!(bot, East, moveFunction=moveFunction)
+            if !isborder(bot, South)
+                move!(bot, South, moveFunction=moveFunction)
+            else
+                move!(bot, West, moveFunction=moveFunction)
+            end
+        else throw("Impossible")
+        end
+    elseif diagonal == SouthWest
+        if !isborder(bot, South)
+            move!(bot, South, moveFunction=moveFunction)
+            if !isborder(bot, West)
+                move!(bot, West, moveFunction=moveFunction)
+            else
+                move!(bot, North, moveFunction=moveFunction)
+            end
+        elseif !isborder(bot, West)
+            move!(bot, West, moveFunction=moveFunction)
+            if !isborder(bot, South)
+                move!(bot, South, moveFunction=moveFunction)
+            else
+                move!(bot, East, moveFunction=moveFunction)
+            end
+        else throw("Impossible")
+        end
+    else throw("Invalid diagonal")
+    end
+end
+
 function move!(bot::Cbot, moveLog::MoveLog ; moveFunction=HorizonSideRobots.move!)
     move!(bot, moveLog.direction, moveLog.steps ; moveFunction=moveFunction)
 end
@@ -70,7 +179,7 @@ function move!(bot::Cbot, moveLogBuffer::Array{MoveLog} ; moveFunction=HorizonSi
     end
 end
 
-function move!(bot::Cbot, moves::Array{HorizonSide} ; moveFunction=HorizonSideRobots.move!)
+function move!(bot::Cbot, moves::Union{Array{HorizonSide}, Tuple{HorizonSide}} ; moveFunction=HorizonSideRobots.move!)
     for dir in copy(moves)
         move!(bot, dir; moveFunction=moveFunction)
     end
@@ -139,6 +248,13 @@ function returnLinear!(bot::Cbot)
     if y > 0 move!(r, South, y) end
     if y < 0 move!(r, North, abs(y)) end
     clearBuffer!(bot)
+end
+
+function moveToCornerThreeSteps(bot::Cbot, diagonal::Diagonal)
+    side1, side2 = Diagonal(diagonal)
+    moveTill!(bot, side1, isborder, bot, side1)
+    moveTill!(bot, side2, isborder, bot, side2)
+    moveTill!(bot, side1, isborder, bot, side1)
 end
 
 function cross!(bot::Cbot)

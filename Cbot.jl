@@ -73,7 +73,7 @@ Base.:+(ml1::MoveLog, ml2::MoveLog) = sumMoveLogs(ml1, ml2)
     
 end
 
-function Cbot(data::Union{Nothing, HorizonSideRobots.SituationData}=nothing, animate::Bool=true)
+function Cbot(data::Union{Nothing, String}=nothing, animate::Bool=true)
     robot = isnothing(data) ? Robot(animate=animate) : Robot(data, animate=animate)
     return Cbot(robot, 0, 0, [], true)
 end
@@ -294,4 +294,28 @@ function fullCanvas!(bot::Cbot; returnFunction=returnLinear!)
 
     returnFunction(bot)
 
+end
+
+"""the following function fills the perimeter"""
+function perimeter!(r::Cbot, returnFunction=returnLinear!)
+    moveToCornerThreeSteps(r, SouthWest)
+    for direction in (North, East, South, West)
+        markLine!(r, direction)
+    end
+    
+    returnFunction(r)
+end
+
+counterClockwise(side::HorizonSide) = HorizonSide(mod(Int(side)+1,4))
+
+function tiltedMove!(r::Cbot, side::HorizonSide)
+    move!(r, side)
+    move!(r, counterClockwise(side))
+end
+
+function markLine!(r::Cbot,side::HorizonSide)
+    while !isborder(r,side) && !isborder(r, counterClockwise(side))
+        tiltedMove!(r,side)
+        putmarker!(r)
+    end
 end

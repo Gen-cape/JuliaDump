@@ -249,11 +249,12 @@ function returnLinear!(bot::Cbot)
     clearBuffer!(bot)
 end
 
-function moveToCornerThreeSteps(bot::Cbot, diagonal::Diagonal)
+function moveToCornerSimple(bot::Cbot, diagonal::Diagonal, times)
     side1, side2 = Diagonal(diagonal)
-    moveTill!(bot, side1, isborder, bot, side1)
-    moveTill!(bot, side2, isborder, bot, side2)
-    moveTill!(bot, side1, isborder, bot, side1)
+    for i in 1:times
+        currentSide = i % 2 == 0 ? side2 : side1
+        moveTill!(bot, currentSide, isborder, bot, currentSide)
+    end
 end
 
 function cross!(bot::Cbot)

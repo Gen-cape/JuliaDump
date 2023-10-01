@@ -21,8 +21,6 @@ function Diagonal(args...)
     end
 end
 
-Diagonal(Nord, East)
-
 function Diagonal(diagonal::Diagonal, convert=true)
     if !convert return diagonal end
     if diagonal == NorthWest
@@ -48,6 +46,7 @@ end
 inverse(side::HorizonSide) = HorizonSide(mod(Int(side)+2,4))
 inverse(side::Diagonal) = Diagonal(mod(Int(side)+2,4))
 inverse(moveLog::MoveLog) = MoveLog(inverse(moveLog.direction), moveLog.steps)
+counterClockwise(side::HorizonSide) = HorizonSide(mod(Int(side)+1,4))
 
 function sumMoveLogs(moveLog1::MoveLog, moveLog2::MoveLog)
     ml1, ml2 = moveLog1.steps > moveLog2.steps ? (moveLog1, moveLog2) : (moveLog2, moveLog1)
@@ -172,7 +171,7 @@ function move!(bot::Cbot, moveLog::MoveLog ; moveFunction=HorizonSideRobots.move
 end
 
 function move!(bot::Cbot, moveLogBuffer::Array{MoveLog} ; moveFunction=HorizonSideRobots.move!)
-    # Copy is very important because move! function can alter Array{MoveLog} and cause infinite loop
+    # Copy is very important because move!() function can alter Array{MoveLog} and cause infinite loop
     for moveLog in copy(moveLogBuffer)
         print(moveLog)
         move!(bot, moveLog; moveFunction=moveFunction)
@@ -304,18 +303,4 @@ function perimeter!(r::Cbot, returnFunction=returnLinear!)
     end
     
     returnFunction(r)
-end
-
-counterClockwise(side::HorizonSide) = HorizonSide(mod(Int(side)+1,4))
-
-function tiltedMove!(r::Cbot, side::HorizonSide)
-    move!(r, side)
-    move!(r, counterClockwise(side))
-end
-
-function markLine!(r::Cbot,side::HorizonSide)
-    while !isborder(r,side) && !isborder(r, counterClockwise(side))
-        tiltedMove!(r,side)
-        putmarker!(r)
-    end
 end

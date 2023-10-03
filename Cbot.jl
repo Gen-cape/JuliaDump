@@ -3,9 +3,9 @@ using HorizonSideRobots
 const (North, South, East) = (Nord, Sud, Ost) # West is identical in English and German
 const (w, a, s, d) = (North, West, South, East) # Debugging purposes
 @enum Diagonal NorthWest=0 NorthEast=1 SouthEast=2 SouthWest=3
-const (NW, NE, SE, SW) = (NorthWest, NorthEast, SouthEast, SouthWest) # West is identical in English and German
+const (NW, NE, SE, SW) = (NorthWest, NorthEast, SouthEast, SouthWest)
 
-function Diagonal(args...)
+function packDiagonal(args...)
     if length(tuple(args...)) != 2
         throw("Diagonal requires 2 sides")
     elseif args[1] == North && args[2] == West
@@ -21,7 +21,7 @@ function Diagonal(args...)
     end
 end
 
-function Diagonal(diagonal::Diagonal, convert=true)
+function unpackDiagonal(diagonal::Diagonal, convert=true)
     if !convert return diagonal end
     if diagonal == NorthWest
         return (North, West)
@@ -44,9 +44,10 @@ end
 
 """the following function changes the direction by 180 degrees"""
 inverse(side::HorizonSide) = HorizonSide(mod(Int(side)+2,4))
-inverse(side::Diagonal) = Diagonal(mod(Int(side)+2,4))
+inverse(side::Diagonal) = packDiagonal(mod(Int(side)+2,4))
 inverse(moveLog::MoveLog) = MoveLog(inverse(moveLog.direction), moveLog.steps)
-counterClockwise(side::HorizonSide) = HorizonSide(mod(Int(side)+1,4))
+turnCounterClockwise(side::HorizonSide) = HorizonSide(mod(Int(side)+1,4))
+turnClockwise(side::HorizonSide) = HorizonSide(mod(Int(side)-1,4))
 
 function sumMoveLogs(moveLog1::MoveLog, moveLog2::MoveLog)
     ml1, ml2 = moveLog1.steps > moveLog2.steps ? (moveLog1, moveLog2) : (moveLog2, moveLog1)
@@ -60,11 +61,11 @@ Base.:+(ml1::MoveLog, ml2::MoveLog) = sumMoveLogs(ml1, ml2)
 
 @kwdef mutable struct Cbot
     robot::HorizonSideRobots.Robot
-    rx::Integer=0
-    ry::Integer=0
-    movesBuffer::Array{MoveLog}=[]
-    traceMove=true
-
+    rx::Integer
+    ry::Integer
+    movesBuffer::Array{MoveLog}
+    traceMove::Bool
+    moveFunction::Function
     # Implementing NamedTuple here isnt the best idea in that particular case,It's recommended to use a struct instead
     # of a @NamedTuple for the movesBuffer type because structs provide better type safety,improved readability
     # and extensibility because of struct optimization. Heres an example of how it'd look in NamedTuple format:
@@ -74,16 +75,16 @@ end
 
 function Cbot(data::Union{Nothing, String}=nothing, animate::Bool=true)
     robot = isnothing(data) ? Robot(animate=animate) : Robot(data, animate=animate)
-    return Cbot(robot, 0, 0, [], true)
+    return Cbot(robot, 0, 0, [], true, HorizonSideRobots.move!)
 end
 
 function bufferToTuple(buffer::Array{MoveLog})
     return [(dir=i.direction, steps=i.steps) for i in buffer]
 end
 
-function move!(bot::Cbot, side::HorizonSide, times=1 ; moveFunction=HorizonSideRobots.move!)
+function move!(bot::Cbot, side::HorizonSide, times=1)
     for i in 1:times
-        moveFunction(bot.robot, side)
+        bot.moveFunction(bot.robot, side)
         if side == North || side == South
             bot.ry += (side == North ? 1 : -1)
         else
@@ -93,94 +94,52 @@ function move!(bot::Cbot, side::HorizonSide, times=1 ; moveFunction=HorizonSideR
     bot.traceMove && push!(bot.movesBuffer, MoveLog(side, times))
 end
 
-function move!(bot::Cbot, diagonal::Diagonal; moveFunction=HorizonSideRobots.move!)
-    if diagonal == NorthWest
-        if !isborder(bot, North)
-            move!(bot, North,moveFunction=moveFunction)
-            if !isborder(bot, West)
-                move!(bot, West, moveFunction=moveFunction)
+function move!(bot::Cbot, diagonal::Diagonal)
+    function tryDiagonal!(bot::Cbot, directions, )::Bool
+        mainDirection, secondaryDirection = directions
+        if !isborder(bot, mainDirection)
+            move!(bot, mainDirection)
+            if !isborder(bot, secondaryDirection)
+                move!(bot, secondaryDirection)
+                return 0
             else
-                move!(bot, South, moveFunction=moveFunction)
+                move!(bot, inverse(mainDirection))
+                return 1
             end
-        elseif !isborder(bot, West)
-            move!(bot, West, moveFunction=moveFunction)
-            if !isborder(bot, North)
-                move!Function(bot, North, moveFunction=moveFunction)
+        elseif !isborder(bot, secondaryDirection)
+            move!(bot, secondaryDirection)
+            if !isborder(bot, mainDirection)
+                move!(bot, mainDirection)
+                return 0
             else
-                move!(bot, East, moveFunction=moveFunction)
+                move!(bot, inverse(mainDirection))
+                return 1
             end
-        else throw("Impossible")
+        else
+            return 1
         end
-    elseif diagonal == NorthEast
-        if !isborder(bot, North)
-            move!(bot, North, moveFunction=moveFunction)
-            if !isborder(bot, East)
-                move!(bot, East, moveFunction=moveFunction)
-            else
-                move!(bot, South, moveFunction=moveFunction)
-            end
-        elseif !isborder(bot, East)
-            move!(bot, East, moveFunction=moveFunction)
-            if !isborder(bot, North)
-                move!(bot, North, moveFunction=moveFunction)
-            else
-                move!(bot, West, moveFunction=moveFunction)
-            end
-        else throw("Impossible")
-        end
-    elseif diagonal == SouthEast
-        if !isborder(bot, South)
-            move!(bot, South, moveFunction=moveFunction)
-            if !isborder(bot, East)
-                move!(bot, East, moveFunction=moveFunction)
-            else
-                move!(bot, North, moveFunction=moveFunction)
-            end
-        elseif !isborder(bot, East)
-            move!(bot, East, moveFunction=moveFunction)
-            if !isborder(bot, South)
-                move!(bot, South, moveFunction=moveFunction)
-            else
-                move!(bot, West, moveFunction=moveFunction)
-            end
-        else throw("Impossible")
-        end
-    elseif diagonal == SouthWest
-        if !isborder(bot, South)
-            move!(bot, South, moveFunction=moveFunction)
-            if !isborder(bot, West)
-                move!(bot, West, moveFunction=moveFunction)
-            else
-                move!(bot, North, moveFunction=moveFunction)
-            end
-        elseif !isborder(bot, West)
-            move!(bot, West, moveFunction=moveFunction)
-            if !isborder(bot, South)
-                move!(bot, South, moveFunction=moveFunction)
-            else
-                move!(bot, East, moveFunction=moveFunction)
-            end
-        else throw("Impossible")
-        end
-    else throw("Invalid diagonal")
+    end
+    dir1, dir2 = unpackDiagonal(diagonal)
+    if tryDiagonal!(bot, (dir1, dir2)) && tryDiagonal!(bot, (dir2, dir1))
+        throw("Impossible")
     end
 end
 
-function move!(bot::Cbot, moveLog::MoveLog ; moveFunction=HorizonSideRobots.move!)
-    move!(bot, moveLog.direction, moveLog.steps ; moveFunction=moveFunction)
+function move!(bot::Cbot, moveLog::MoveLog)
+    move!(bot, moveLog.direction, moveLog.steps)
 end
 
-function move!(bot::Cbot, moveLogBuffer::Array{MoveLog} ; moveFunction=HorizonSideRobots.move!)
+function move!(bot::Cbot, moveLogBuffer::Array{MoveLog})
     # Copy is very important because move!() function can alter Array{MoveLog} and cause infinite loop
     for moveLog in copy(moveLogBuffer)
         print(moveLog)
-        move!(bot, moveLog; moveFunction=moveFunction)
+        move!(bot, moveLog)
     end
 end
 
-function move!(bot::Cbot, moves::Union{Array{HorizonSide}, Tuple{HorizonSide}} ; moveFunction=HorizonSideRobots.move!)
+function move!(bot::Cbot, moves::Union{Array{HorizonSide}, Tuple{HorizonSide}})
     for dir in copy(moves)
-        move!(bot, dir; moveFunction=moveFunction)
+        move!(bot, dir)
     end
 end
 
@@ -250,7 +209,7 @@ function returnLinear!(bot::Cbot)
 end
 
 function moveToCornerSimple(bot::Cbot, diagonal::Diagonal, times)
-    side1, side2 = Diagonal(diagonal)
+    side1, side2 = unpackDiagonal(diagonal)
     for i in 1:times
         currentSide = i % 2 == 0 ? side2 : side1
         moveTill!(bot, currentSide, isborder, bot, currentSide)

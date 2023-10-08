@@ -234,8 +234,9 @@ end
 
 function moveTill!(bot::Cbot, side::HorizonSide, event::Function, args1, markEvent::Function, args2)
     while !event(args1...)
+        if markEvent(args2...) putmarker!(bot) end
         move!(bot, side)
-        if mark putmarker!(bot) end
+        # if markEvent(args2...) putmarker!(bot) end
     end
 end
 
@@ -398,21 +399,15 @@ function ouroboros(bot::Cbot, diagonal::Diagonal, event::Function, args)
 end
 
 
-function snakeFromCorner!(bot::Cbot,mark, event1::Function, args1, event2::Function, args2)
+function snakeFromCorner!(bot::Cbot, event1::Function, args1, event2::Function, args2)
     verticalBorder = isborder(bot, North) ? North : (isborder(bot, South) ? South : nothing)
     horizontalBorder = isborder(bot, East) ? East : (isborder(bot, West) ? West : nothing)
     @assert isnothing(verticalBorder) || isnothing(horizontalBorder) == false
     vMovementDir = inverse(verticalBorder)
     hMovementDir = inverse(horizontalBorder)
     while !event1(args1...)
-        moveTill!(bot, hMovementDir, isborder, [bot, (hMovementDir, vMovementDir), false, true]; mark=mark)
-        if isborder(bot, vMovementDir) break end
-        !isborder(bot, vMovementDir) && move!(bot, vMovementDir)
+        moveTill!(bot, hMovementDir, isborder, [bot,hMovementDir], event2, [args2])
         hMovementDir = inverse(hMovementDir)
+        !isborder(bot, vMovementDir) && move!(bot, vMovementDir)
     end
-    # moveTill!(bot, hMovementDir, isborder, bot, (hMovementDir, vMovementDir), true, false; mark=mark)
-end
-
-function chessboard(bot::Cbot, )
-    
 end

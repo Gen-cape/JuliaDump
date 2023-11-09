@@ -1,8 +1,8 @@
 using Test
-include("Cbot.jl")
+include("KingBot.jl")
 
-getTrueCoords(r::Cbot) = r.robot.situation.robot_position
-getRelativeCoords(r::Cbot) = (r.rx, r.ry)
+getTrueCoords(r::KingBot) = r.robot.situation.robot_position
+getRelativeCoords(r::KingBot) = (r.rx, r.ry)
 
 @testset "diagonalsPacking" begin
     @test packDiagonal(North, West) == NorthWest
@@ -32,7 +32,7 @@ end
 end
 
 @testset "basicBotCommands" begin
-    bot = Cbot(nothing,false)
+    bot = KingBot(nothing,false)
     putmarker!(bot)
 
     @test HorizonSideRobots.ismarker(bot.robot) == true
@@ -52,7 +52,7 @@ end
 end
 
 @testset "DiagonalCoords" begin
-    bot = Cbot("default.sit",false)
+    bot = KingBot("default.sit",false)
     relativeX, relativeY = getRelativeCoords(bot)
     y,x = getTrueCoords(bot)
     move!(bot, NW)
@@ -95,7 +95,7 @@ end
     @test bot.ry == relativeY-1
 end
 @testset "DiagonalMovement" begin
-    bot = Cbot("Situations/DiagonalMovement.sit", false)
+    bot = KingBot("Situations/DiagonalMovement.sit", false)
     x, y = getRelativeCoords(bot)
     move!(bot, SW, 2)
     @test bot.rx == x-2

@@ -60,9 +60,11 @@ function sumMoveLogs(moveLog1::MoveLog, moveLog2::MoveLog)
 end
 
 Base.:(==)(ml1::MoveLog, ml2::MoveLog) = ml1.direction == ml2.direction && ml1.steps == ml2.steps
+Base.:(==)(side::HorizonSide, ml2::MoveLog) = side == ml2.direction && ml2.steps == 1
+Base.:(==)(ml1::MoveLog, side::HorizonSide) = side == ml1.direction && ml1.steps == 1
 Base.:+(ml1::MoveLog, ml2::MoveLog) = sumMoveLogs(ml1, ml2)
 
-@kwdef mutable struct Cbot
+@kwdef mutable struct KingBot
     robot::HorizonSideRobots.Robot
     rx::Integer
     ry::Integer
@@ -73,19 +75,18 @@ Base.:+(ml1::MoveLog, ml2::MoveLog) = sumMoveLogs(ml1, ml2)
     # of a @NamedTuple for the movesBuffer type because structs provide better type safety,improved readability
     # and extensibility because of struct optimization. Heres an example of how it'd look in NamedTuple format:
     # movesBuffer::Array{NamedTuple{(:dir, :steps),Tuple{Union{Nothing, HorizonSideRobots.HorizonSide}, Union{Nothing, Integer}}}}
-    
 end
 
-function Cbot(data::Union{Nothing, String}=nothing, animate::Bool=true)
+function KingBot(data::Union{Nothing, String}=nothing, animate::Bool=true)
     robot = isnothing(data) ? Robot(animate=animate) : Robot(data, animate=animate)
-    return Cbot(robot, 0, 0, [], true, HorizonSideRobots.move!)
+    return KingBot(robot, 0, 0, [], true, HorizonSideRobots.move!)
 end
 
 function bufferToTuple(buffer::Array{MoveLog})
     return [(dir=i.direction, steps=i.steps) for i in buffer]
 end
 
-function move!(bot::Cbot, side::HorizonSide, times=1;mark=false)
+function move!(bot::KingBot, side::HorizonSide, times=1;mark=false)
     for _ in 1:times
         bot.moveFunction(bot.robot, side)
         mark && putmarker!(bot)
@@ -98,8 +99,8 @@ function move!(bot::Cbot, side::HorizonSide, times=1;mark=false)
     bot.traceMove && push!(bot.movesBuffer, MoveLog(side, times))
 end
 
-function move!(bot::Cbot, diagonal::Diagonal, times=1;mark=false)
-    function tryDiagonal!(bot::Cbot, directions, )::Bool
+function move!(bot::KingBot, diagonal::Diagonal, times=1;mark=false)
+    function tryDiagonal!(bot::KingBot, directions, )::Bool
         mainDirection, secondaryDirection = directions
         if !isborder(bot, mainDirection)
             move!(bot, mainDirection;mark=mark)
@@ -131,28 +132,28 @@ function move!(bot::Cbot, diagonal::Diagonal, times=1;mark=false)
     end
 end
 
-function move!(bot::Cbot, moveLog::MoveLog)
+function move!(bot::KingBot, moveLog::MoveLog)
     move!(bot, moveLog.direction, moveLog.steps)
 end
 
-function move!(bot::Cbot, moveLogBuffer::Array{MoveLog})
+function move!(bot::KingBot, moveLogBuffer::Array{MoveLog})
     # Copy is very important because move!() function can alter Array{MoveLog} and cause infinite loop
     for moveLog in copy(moveLogBuffer)
         move!(bot, moveLog)
     end
 end
 
-function move!(bot::Cbot, moves::Union{Array{HorizonSide}, Tuple{HorizonSide}})
+function move!(bot::KingBot, moves::Union{Array{HorizonSide}, Tuple{HorizonSide}})
     for dir in copy(moves)
         move!(bot, dir)
     end
 end
 
-function isborder(bot::Cbot, side::HorizonSide ; checkFunction=HorizonSideRobots.isborder)
+function isborder(bot::KingBot, side::HorizonSide ; checkFunction=HorizonSideRobots.isborder)
     return checkFunction(bot.robot, side)
 end
 
-function isborder(bot::Cbot, sides, checkAll=true, checkAny=false)
+function isborder(bot::KingBot, sides, checkAll=true, checkAny=false)
     res = []
     for i in sides
         if isborder(bot, i) push!(res, true)
@@ -164,40 +165,46 @@ function isborder(bot::Cbot, sides, checkAll=true, checkAny=false)
     return res     
 end
 
-function putmarker!(bot::Cbot ; markerFunction=HorizonSideRobots.putmarker!)
+function putmarker!(bot::KingBot ; markerFunction=HorizonSideRobots.putmarker!)
     markerFunction(bot.robot)
 end
 
-function ismarker(bot::Cbot ; markerFunction=HorizonSideRobots.ismarker)
+function ismarker(bot::KingBot ; markerFunction=HorizonSideRobots.ismarker)
     return markerFunction(bot.robot)
 end
 
-function markLine!(bot::Cbot,side::HorizonSide)
+function markLine!(bot::KingBot,side::HorizonSide)
     while !isborder(bot,side) 
         move!(bot,side)
         putmarker!(bot)
     end
 end
 
-function markLine!(bot::Cbot,side::HorizonSide, markerEvent::Function, args)
+function markLine!(bot::KingBot,side::HorizonSide, markerEvent::Function, args)
     while !isborder(bot,side) 
         move!(bot,side)
         markerEvent(args) && putmarker!(bot)
     end
 end
 
-function perimeter!(r::Cbot, event::Function, args;returnFunction=returnSafe!)
+function perimeter!(r::KingBot, stopCondition::Function, stopConditionArgs;returnFunction=returnSafe!)
     moveToCornerInf(r, SouthWest)
     for direction in (North, East, South, West)
-        markLine!(r, direction, event, args)
+        markLine!(r, direction, stopCondition, stopConditionArgs)
     end
     
     returnFunction(r)
 end
 
-function clearBuffer!(bot::Cbot, traceMove=true)
+function clearBuffer!(bot::KingBot, traceMove=true)
     bot.movesBuffer=[]
     bot.traceMove=traceMove
+end
+
+function clearLogging!(bot::KingBot, traceMove=true)
+    bot.rx = 0
+    bot.ry = 0
+    clearBuffer!(bot, traceMove)
 end
 
 function inverseBuffer(buffer::Vector{ MoveLog })
@@ -217,7 +224,7 @@ function simplifyBuffer(moveLogBuffer::Array{MoveLog})
     return simplifiedBuffer
 end
 
-function returnSafe!(bot::Cbot)
+function returnSafe!(bot::KingBot)
     bot.traceMove=false
     for moveLog in simplifyBuffer(inverseBuffer(reverse!(bot.movesBuffer)))
         move!(bot, moveLog)
@@ -225,25 +232,32 @@ function returnSafe!(bot::Cbot)
     clearBuffer!(bot)
 end
 
-function moveTill!(bot::Cbot, side::HorizonSide, event::Function=HorizonSideRobots.isborder, args=[];mark=false)
-    while !event(args...)
+function moveTill!(bot::KingBot, side::HorizonSide, stopCondition::Function=HorizonSideRobots.isborder, stopConditionArgs=[];mark=false)
+    while !stopCondition(stopConditionArgs...)
         move!(bot, side)
         if mark putmarker!(bot) end
     end
 end
 
-function moveTill!(bot::Cbot, side::HorizonSide, event::Function, args1, markEvent::Function, args2)
-    while !event(args1...)
-        if markEvent(args2...) putmarker!(bot) end
+function moveTill!(bot::KingBot, side::HorizonSide, stopCondition::Function, stopConditionArgs, markCondition::Function, markConditionArgs)
+    while !stopCondition(stopConditionArgs...)
+        if markCondition(markConditionArgs...) putmarker!(bot) end
         move!(bot, side)
-        # if markEvent(args2...) putmarker!(bot) end
+    end
+end
+
+function moveTill!(bot::KingBot, side::HorizonSide, stopCondition::Function, stopConditionArgs, markCondition::Function, markConditionArgs, controlCodnition::Function, controlCodnitionArgs)
+    while !stopCondition(stopConditionArgs...)
+        if markCondition(markConditionArgs...) putmarker!(bot) end
+        controlCodnition(controlCodnitionArgs...)
+        move!(bot, side)
     end
 end
 
 # inverse, [isborder, [bot, North]]
 # inverse, isborder, bot, North
 
-function returnLinear!(bot::Cbot)
+function returnLinear!(bot::KingBot)
     bot.traceMove=false
     x,y = bot.rx, bot.ry
     if x > 0 move!(bot, West, x) end
@@ -253,7 +267,7 @@ function returnLinear!(bot::Cbot)
     clearBuffer!(bot)
 end
 
-function moveToCornerSimple(bot::Cbot, diagonal::Diagonal, times)
+function moveToCornerSimple(bot::KingBot, diagonal::Diagonal, times)
     side1, side2 = unpackDiagonal(diagonal)
     for i in 1:times
         currentSide = i % 2 == 0 ? side2 : side1
@@ -261,7 +275,7 @@ function moveToCornerSimple(bot::Cbot, diagonal::Diagonal, times)
     end
 end
 
-function moveToCornerInf(bot::Cbot, diagonal::Diagonal)
+function moveToCornerInf(bot::KingBot, diagonal::Diagonal)
     side1, side2 = unpackDiagonal(diagonal)
     i = 0
     while !cornered(bot, diagonal)
@@ -271,7 +285,7 @@ function moveToCornerInf(bot::Cbot, diagonal::Diagonal)
     end
 end
 
-function cross!(bot::Cbot)
+function cross!(bot::KingBot)
     for i in range(0, 3)
         side = HorizonSide(i)
         markLine!(bot,side)
@@ -280,7 +294,7 @@ function cross!(bot::Cbot)
     putmarker!(bot)
 end
 
-function fullCanvas!(bot::Cbot; returnFunction=returnLinear!)
+function fullCanvas!(bot::KingBot; returnFunction=returnLinear!)
     moveTill!(bot, South, isborder, [bot, South])
     moveTill!(bot, West, isborder, [bot, West])
     putmarker!(bot)
@@ -311,7 +325,7 @@ function fullCanvas!(bot::Cbot; returnFunction=returnLinear!)
 end
 
 """the following function fills the perimeter"""
-function perimeter!(r::Cbot; returnFunction=returnLinear!)
+function perimeter!(r::KingBot; returnFunction=returnLinear!)
     moveToCornerSimple(r, SouthWest, 3)
     for direction in (North, East, South, West)
         markLine!(r, direction)
@@ -320,19 +334,19 @@ function perimeter!(r::Cbot; returnFunction=returnLinear!)
     returnFunction(r)
 end
 
-function cornered(bot::Cbot, diagonal::Diagonal)
+function cornered(bot::KingBot, diagonal::Diagonal)
     d1, d2 = unpackDiagonal(diagonal)
     return isborder(bot, d1) && isborder(bot, d2)
 end
 
 # Do NOT execute it not from corner, it gets context from it
-function snakeFromCorner!(bot::Cbot,mark, event::Function=HorizonSideRobots.isborder, args::Array{Any}=[])
+function snakeFromCorner!(bot::KingBot,mark, stopCondition::Function=HorizonSideRobots.isborder, args::Array{Any}=[])
     verticalBorder = isborder(bot, North) ? North : (isborder(bot, South) ? South : nothing)
     horizontalBorder = isborder(bot, East) ? East : (isborder(bot, West) ? West : nothing)
     @assert isnothing(verticalBorder) || isnothing(horizontalBorder) == false
     vMovementDir = inverse(verticalBorder)
     hMovementDir = inverse(horizontalBorder)
-    while !event(args...)
+    while stopCondition(args...)
         moveTill!(bot, hMovementDir, isborder, [bot, (hMovementDir, vMovementDir), false, true]; mark=mark)
         if isborder(bot, vMovementDir) break end
         !isborder(bot, vMovementDir) && move!(bot, vMovementDir)
@@ -341,7 +355,7 @@ function snakeFromCorner!(bot::Cbot,mark, event::Function=HorizonSideRobots.isbo
     # moveTill!(bot, hMovementDir, isborder, bot, (hMovementDir, vMovementDir), true, false; mark=mark)
 end
 
-function moveAround!(bot::Cbot, initialStickingDirection=North)
+function moveAround!(bot::KingBot, initialStickingDirection=North)
     secondaryDirection = turnClockwise(initialStickingDirection)
     # print(secondaryDirection)
     moveTill!(bot, inverse(secondaryDirection),inverse, [isborder, [bot, initialStickingDirection]])
@@ -354,7 +368,7 @@ function moveAround!(bot::Cbot, initialStickingDirection=North)
     end
 end
 
-function twoFrames!(bot::Cbot, returnFunction=returnSafe!)
+function twoFrames!(bot::KingBot, returnFunction=returnSafe!)
     moveToCornerSimple(bot, SW, 3)
     perimeter!(bot)
     moveToCornerSimple(bot, SW, 3)
@@ -363,19 +377,19 @@ function twoFrames!(bot::Cbot, returnFunction=returnSafe!)
     returnFunction(bot)
 end
 
-function linearSearch(bot::Cbot,startingDirection::HorizonSide,  event::Function, args...)
+function linearSearch!(bot::KingBot,startingDirection::HorizonSide,  stopCondition::Function, stopConditionArgs...)
     currentDirection = startingDirection
     ampl = 1
-    while !event(args...)
+    while !stopCondition(stopConditionArgs...)
         move!(bot, currentDirection, ampl)
         currentDirection = inverse(currentDirection)
         ampl += 1
     end
 end
 
-function move!(bot::Cbot, side::HorizonSide, times, event::Function, args ;mark=false)
+function move!(bot::KingBot, side::HorizonSide, times, stopCondition::Function, stopConditionArgs ;mark=false)
     for _ in 1:times
-        if event(args) break end
+        if stopCondition(stopConditionArgs) break end
         bot.moveFunction(bot.robot, side)
         mark && putmarker!(bot)
         if side == North || side == South
@@ -387,27 +401,217 @@ function move!(bot::Cbot, side::HorizonSide, times, event::Function, args ;mark=
     bot.traceMove && push!(bot.movesBuffer, MoveLog(side, times))
 end
 
-function ouroboros(bot::Cbot, diagonal::Diagonal, event::Function, args)
+function ouroboros!(bot::KingBot, diagonal::Diagonal, stopCondition::Function, stopConditionArgs)
     currentDirection, secondaryDirection = unpackDiagonal(diagonal)
     rotatingFunction = secondaryDirection == turnClockwise(currentDirection) ? turnClockwise : turnCounterClockwise
     ampl = 0
-    while !event(args)
-        move!(bot, currentDirection, 1+div(ampl, 2), event, args)
+
+    while stopCondition(stopConditionArgs)
+        move!(bot, currentDirection, 1+div(ampl, 2), stopCondition, stopConditionArgs)
         ampl += 1
         currentDirection=rotatingFunction(currentDirection)
     end
 end
 
 
-function snakeFromCorner!(bot::Cbot, event1::Function, args1, event2::Function, args2)
+function snakeFromCorner!(bot::KingBot, stopCondition::Function, stopConditionArgs, markCondition::Function, markConditionArgs)
     verticalBorder = isborder(bot, North) ? North : (isborder(bot, South) ? South : nothing)
     horizontalBorder = isborder(bot, East) ? East : (isborder(bot, West) ? West : nothing)
+
     @assert isnothing(verticalBorder) || isnothing(horizontalBorder) == false
+
     vMovementDir = inverse(verticalBorder)
     hMovementDir = inverse(horizontalBorder)
-    while !event1(args1...)
-        moveTill!(bot, hMovementDir, isborder, [bot,hMovementDir], event2, [args2])
+
+    while !stopCondition(stopConditionArgs...)
+        moveTill!(bot, hMovementDir, isborder, [bot,hMovementDir], markCondition, [markConditionArgs])
         hMovementDir = inverse(hMovementDir)
         !isborder(bot, vMovementDir) && move!(bot, vMovementDir)
+    end
+end
+
+
+
+function checkAllBorders(bot::KingBot)
+    return [HorizonSide(side) for side in 0:3 if isborder(bot, HorizonSide(side))]
+end
+
+function checkAllUnblockedPaths(bot::KingBot)
+    return [HorizonSide(side) for side in 0:3 if !isborder(bot, HorizonSide(side))]
+end
+
+function getNextPerimeterSide(bot::KingBot, dominatingSide, rotatingFunction::Function=turnClockwise) 
+    # check if theres only one possible move, if so - do it
+    borders = checkAllBorders(bot)
+    if length(borders) == 3 return first(checkAllUnblockedPaths(bot))
+    elseif length(borders) == 2
+        possibleMoves = setdiff!([inverse(rotatingFunction(side)) for side in borders], borders)
+        if !isempty(bot.movesBuffer)
+            possibleMoves = setdiff!(possibleMoves, [inverse(last(bot.movesBuffer).direction)])
+        end
+        length(possibleMoves) == 1 && return first(possibleMoves)
+    end
+    # if we cant determine the starting move, then we'll get it from supplied side, its useful for some starting positions
+    isempty(bot.movesBuffer) && return rotatingFunction(dominatingSide)
+    # otherwise we can determine the next move by previous move
+    commonSide = rotatingFunction(last(bot.movesBuffer).direction)
+    if !isborder(bot, commonSide)
+        return commonSide
+    end
+    return last(bot.movesBuffer).direction
+end
+
+function isInside!(bot::KingBot, side::HorizonSide, rotatingFunction::Function=turnClockwise)
+    moveTill!(bot, side, isborder, [bot, side])
+    clearLogging!(bot)
+    
+    toCheck = checkAllBorders(bot)
+    up, left, down, right = false, false, false, false
+    maxY, maxX, minY, minX = 0, 0, 0, 0
+
+    # these inner functions arent supposed to be used anywhere else, they are sort of Syntactic sugar
+    # updates toCheck based on the bot's last moves and the type of rotatingFunction
+    function excludeSides!()
+        if isempty(bot.movesBuffer)
+            side = rotatedNextMove()
+            setdiff!(toCheck, [side])
+        else
+            side = rotatingFunction(last(bot.movesBuffer).direction)
+            (bot.rx == 0 && bot.ry == 0) && setdiff!(toCheck, [side])
+        end
+
+        if !isempty(bot.movesBuffer) && (bot.rx == 0 && bot.ry == 0) && length(checkAllBorders(bot)) == 3
+            empty!(toCheck)
+        end
+    end
+
+    # the function returns next side to move around object after rotating it 
+    function rotatedNextMove()
+        return rotatingFunction(getNextPerimeterSide(bot, side, rotatingFunction))
+    end
+
+    # the function returns next side to move around object without rotating it 
+    function nextMove()
+        return getNextPerimeterSide(bot, side,rotatingFunction)
+    end
+
+    while true
+        # update toCheck
+        excludeSides!()
+
+        # update flags to determine bot's position
+        if !isempty(checkAllBorders(bot)) && isborder(bot, rotatedNextMove())
+            maxY = max(maxY, bot.ry)
+            minY = min(minY, bot.ry)
+            maxX = max(maxX, bot.rx)
+            minX = min(minX, bot.rx)
+            if bot.ry >= maxY up = !isborder(bot, inverse(North)) end
+            if bot.ry <= minY down = !isborder(bot, inverse(South)) end
+            if bot.rx >= maxX right = !isborder(bot, inverse(East)) end
+            if bot.rx <= minX left = !isborder(bot, inverse(West)) end
+        end
+
+        # if the toCheck is empty, the movement around structure is completed
+        if isempty(toCheck)
+            return any([up, left, down, right])
+        end
+        
+        move!(bot, nextMove())
+
+    end
+end
+
+function calculateArea!(bot::KingBot, side::HorizonSide, rotatingFunction::Function=turnClockwise)
+    moveTill!(bot, side, isborder, [bot, side])
+    clearLogging!(bot)
+
+    toCheck = checkAllBorders(bot)
+    cnt = 0
+    # these inner functions arent supposed to be used anywhere else, they are sort of Syntactic sugar
+    # check the left side and update counter
+    function checkLeft()
+        if isborder(bot, West)
+            # putmarker!(bot)
+            # println("+ $(bot.rx) ($(bot.rx), $(bot.ry)) ")
+            cnt += bot.rx
+        end
+    end
+    # check the right side and update counter
+    function checkRight()
+        if isborder(bot, East)
+            # println("- $(bot.rx + 1) ($(bot.rx), $(bot.ry)) ")
+            # putmarker!(bot)
+            # add correction
+            cnt -= bot.rx + 1
+        end
+    end
+
+    # handle which side to update depending on the rotatingFunction
+    function checkBoth!(side::HorizonSide)
+        if side in (rotatingFunction(West), East) checkRight()
+        else checkLeft()
+        end
+    end
+    
+    # the function returns next side to move around object after rotating it 
+    function rotatedNextMove()
+        return rotatingFunction(getNextPerimeterSide(bot, side, rotatingFunction))
+    end
+    
+    # the function returns next side to move around object without rotating it 
+    function nextMove()
+        return getNextPerimeterSide(bot, side,rotatingFunction)
+    end
+
+    function lastMove()
+        if isempty(bot.movesBuffer)
+            return nextMove()
+        end
+        return last(bot.movesBuffer).direction
+    end
+
+    # updates toCheck based on the bot's last moves and the type of rotatingFunction
+    function excludeSides!()
+        # println(toCheck)
+        if isempty(bot.movesBuffer)
+            side = rotatedNextMove()
+            if length(toCheck) == 3
+                checkLeft()
+                checkRight()
+            end
+            setdiff!(toCheck, [side])
+        else
+            side = rotatingFunction(last(bot.movesBuffer).direction)
+            if (bot.rx == 0 && bot.ry == 0)
+                if (length(checkAllBorders(bot)) != 3)
+                    checkBoth!(lastMove())
+                end
+                setdiff!(toCheck, [side])
+            end
+        end
+
+        if !isempty(bot.movesBuffer) && (bot.rx == 0 && bot.ry == 0) && length(checkAllBorders(bot)) == 3
+            empty!(toCheck)
+        end
+    end
+
+    while true
+        # update toCheck
+        excludeSides!()
+        
+        # if the toCheck is empty, the movement around structure is completed
+        if isempty(toCheck)
+            return cnt
+        end
+        
+        # update counter
+        if isborder(bot, rotatedNextMove()) && !isempty(bot.movesBuffer) && (bot.rx != 0 || bot.ry != 0)
+            checkBoth!(lastMove())
+            if length(checkAllBorders(bot)) == 3
+                checkBoth!(inverse(lastMove()))
+            end
+        end
+        
+        move!(bot, nextMove())
     end
 end
